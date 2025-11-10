@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin </title><meta name="title" content="Kiosk admin "><meta name="description" content="Update version 2.0"><meta charset="UTF-8">
+<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin </title><meta name="title" content="Kiosk admin "><meta name="description" content="With qr code "><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="stylesheet" href="./style.css"><script src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js" async=""></script><script type="importmap">{
   "imports": {}
 }</script></head><body>
+
+
 
 
 
@@ -48,7 +50,24 @@
     <div class="max-w-7xl mx-auto space-y-8">
         <!-- Header & Summary Cards -->
         <div>
-            <h1 class="text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
+                <div class="relative">
+                    <button id="notification-bell-btn" class="p-2 bg-white rounded-full text-gray-500 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                        <span id="notification-badge" class="absolute -top-1 -right-1 h-5 w-5 bg-red-500 text-white text-xs font-semibold rounded-full flex items-center justify-center hidden">0</span>
+                    </button>
+                    <div id="notification-dropdown" class="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-xl hidden z-50 border max-h-96 overflow-y-auto">
+                        <div class="p-3 border-b">
+                            <h4 class="font-bold text-gray-800">Call History</h4>
+                        </div>
+                        <div id="notification-list">
+                            <!-- Call logs go here -->
+                        </div>
+                        <div id="no-notifications-msg" class="text-center p-4 text-gray-500">No recent calls.</div>
+                    </div>
+                </div>
+            </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-6">
                 <div class="bg-white p-5 rounded-xl shadow-sm"><p class="text-sm text-gray-500">Total Orders</p><p id="total-orders" class="text-2xl font-bold">0</p></div>
                 <div class="bg-white p-5 rounded-xl shadow-sm"><p class="text-sm text-gray-500">Total Revenue</p><p id="total-revenue" class="text-2xl font-bold">₹0</p></div>
@@ -79,6 +98,32 @@
                 <!-- Request cards will be injected here -->
             </div>
             <p id="no-kiosk-requests-message" class="hidden p-6 text-center text-gray-500">No pending requests from the kiosk.</p>
+        </div>
+
+        <!-- Payment QR Settings Panel -->
+        <div class="bg-white rounded-xl shadow-sm">
+            <div class="p-6 border-b">
+                <h2 class="text-xl font-bold text-gray-800">Payment QR Code Settings</h2>
+                <p class="text-sm text-gray-500 mt-1">Upload your business UPI QR code image and set your UPI ID. This will be shown to customers for payment.</p>
+            </div>
+            <div class="p-6">
+                <form id="qr-settings-form" class="space-y-4 max-w-lg">
+                    <div>
+                        <label for="upi-id-input" class="block text-sm font-medium text-gray-700">UPI ID</label>
+                        <input type="text" id="upi-id-input" placeholder="your-name@oksbi" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">QR Code Image</label>
+                        <div class="mt-1 flex items-center gap-4">
+                            <img id="qr-code-preview" src="https://via.placeholder.com/128" alt="QR Code Preview" class="h-32 w-32 object-contain bg-gray-100 rounded-md p-1 border">
+                            <input type="file" id="qr-code-upload" accept="image/png, image/jpeg" class="block text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <button type="submit" class="bg-indigo-600 text-white font-semibold py-2 px-6 rounded-lg shadow-md hover:bg-indigo-700">Save Settings</button>
+                    </div>
+                </form>
+            </div>
         </div>
 
         <!-- Orders Table -->
@@ -179,8 +224,53 @@
         let peerConnections = {};
         const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
         let knownLiveCallKeys = new Set();
+        let callHistory = [];
+        let unreadCallCount = 0;
+        let previouslyRingingKiosks = new Map();
 
         // --- UTILS ---
+        function showToast(message, duration = 3000) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-5 right-5 bg-gray-800 text-white py-2 px-4 rounded-lg shadow-lg z-50 transition-opacity duration-300';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+
+        function speak(text, lang = 'hi-IN') {
+            if (!('speechSynthesis' in window)) {
+                console.warn("Speech synthesis not supported.");
+                return;
+            }
+            setTimeout(() => {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = lang;
+                const voices = window.speechSynthesis.getVoices();
+                const targetVoice = voices.find(v => v.lang === lang || v.lang === 'en-IN');
+                if (targetVoice) utterance.voice = targetVoice;
+                speechSynthesis.speak(utterance);
+            }, 100);
+        }
+
+        function timeAgo(timestamp) {
+            const now = Date.now();
+            const seconds = Math.floor((now - timestamp) / 1000);
+            let interval = seconds / 31536000;
+            if (interval > 1) return Math.floor(interval) + " years ago";
+            interval = seconds / 2592000;
+            if (interval > 1) return Math.floor(interval) + " months ago";
+            interval = seconds / 86400;
+            if (interval > 1) return Math.floor(interval) + " days ago";
+            interval = seconds / 3600;
+            if (interval > 1) return Math.floor(interval) + " hours ago";
+            interval = seconds / 60;
+            if (interval > 1) return Math.floor(interval) + " minutes ago";
+            return "just now";
+        }
+
         const calculateTotals = (order) => {
             let total = 0;
             if (order.type === 'stitching' && order.items) {
@@ -559,9 +649,14 @@
                                 <p class="text-sm text-gray-600">Mobile: ${request.customerMobile}</p>
                                 <p class="mt-2 text-gray-700">${request.description}</p>
                             </div>
-                            <button class="process-request-btn w-full sm:w-auto bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-indigo-700 flex-shrink-0" data-key="${key}" data-name="${encodeURIComponent(request.customerName)}" data-mobile="${encodeURIComponent(request.customerMobile)}" data-description="${encodeURIComponent(request.description)}">
-                                Process Request
-                            </button>
+                            <div class="flex flex-col sm:flex-row items-center gap-2 flex-shrink-0 w-full sm:w-auto">
+                                <button class="process-request-btn w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-indigo-700" data-key="${key}" data-name="${encodeURIComponent(request.customerName)}" data-mobile="${encodeURIComponent(request.customerMobile)}" data-description="${encodeURIComponent(request.description)}">
+                                    Process Request
+                                </button>
+                                <button class="reject-request-btn w-full bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-red-700" data-key="${key}">
+                                    Reject
+                                </button>
+                            </div>
                         </div>`;
                 }).join('');
                 knownKioskRequestKeys = newRequestKeys;
@@ -577,11 +672,31 @@
                         mobile: decodeURIComponent(dataset.mobile),
                         description: decodeURIComponent(dataset.description),
                     });
+                } else if (e.target && e.target.classList.contains('reject-request-btn')) {
+                    const requestKey = e.target.dataset.key;
+                    if(requestKey){
+                        document.getElementById('confirmation-modal').classList.remove('hidden');
+                        confirmationCallback = () => {
+                            db.ref('kiosk/orderRequests/' + requestKey).remove();
+                            document.getElementById('confirmation-modal').classList.add('hidden');
+                        };
+                    }
                 }
             });
         }
         
-        // --- LIVE CALLS (WebRTC) LOGIC ---
+        // --- LIVE CALLS (WebRTC) & NOTIFICATION BELL LOGIC ---
+        async function signalAndEndCall(kioskId) {
+            const statusSnap = await db.ref(`kiosk/liveFeeds/${kioskId}/status`).once('value');
+            if (statusSnap.exists() && statusSnap.val() === 'in_call') {
+                await db.ref(`kiosk/liveFeeds/${kioskId}/adminAction`).set({ 
+                    type: 'call_ended', 
+                    timestamp: firebase.database.ServerValue.TIMESTAMP 
+                });
+            }
+            endAdminCall(kioskId);
+        }
+
         async function startAdminCall(kioskId, kioskData) {
             document.getElementById('call-modal').classList.remove('hidden');
             const titleEl = document.getElementById('call-modal-title');
@@ -603,8 +718,15 @@
             titleEl.textContent = title;
             actionsContainer.innerHTML = actionsHtml;
 
-            // Set up button listeners
-            actionsContainer.querySelector('#end-call-btn').onclick = () => endAdminCall(kioskId);
+            const logEntry = callHistory.find(log => log.kioskId === kioskId && log.status === 'ringing');
+            if (logEntry) {
+                db.ref(`kiosk/callLogs/${logEntry.key}`).update({
+                    status: 'answered',
+                    answeredAt: firebase.database.ServerValue.TIMESTAMP
+                });
+            }
+
+            actionsContainer.querySelector('#end-call-btn').onclick = () => signalAndEndCall(kioskId);
             if (actionsContainer.querySelector('#approve-payment-btn')) {
                 actionsContainer.querySelector('#approve-payment-btn').onclick = () => handlePaymentApproval(kioskId, kioskData, true);
             }
@@ -619,7 +741,16 @@
                 }
 
                 const pc = new RTCPeerConnection(rtcConfig);
-                peerConnections[kioskId] = pc;
+                const statusListener = (snapshot) => {
+                    const status = snapshot.val();
+                    if (status !== 'in_call' && peerConnections[kioskId]) {
+                        showToast(`Call with ${kioskData.kioskInfo.name} ended.`);
+                        endAdminCall(kioskId);
+                    }
+                };
+
+                peerConnections[kioskId] = { pc: pc, statusListener: statusListener };
+                db.ref(`kiosk/liveFeeds/${kioskId}/status`).on('value', statusListener);
                 
                 localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
@@ -634,7 +765,9 @@
                 };
 
                 db.ref(`kiosk/liveFeeds/${kioskId}/webrtc/kioskCandidates`).on('child_added', snapshot => {
-                    if (snapshot.exists()) pc.addIceCandidate(new RTCIceCandidate(snapshot.val()));
+                    if (snapshot.exists() && pc.signalingState !== 'closed') {
+                         pc.addIceCandidate(new RTCIceCandidate(snapshot.val())).catch(e => console.error("Error adding received ICE candidate", e));
+                    }
                 });
 
                 await pc.setRemoteDescription(new RTCSessionDescription(kioskData.webrtc.offer));
@@ -651,10 +784,25 @@
         }
         
         function endAdminCall(kioskId) {
+            const logEntry = callHistory.find(log => log.kioskId === kioskId && log.status === 'answered');
+            if (logEntry) {
+                 db.ref(`kiosk/callLogs/${logEntry.key}`).update({
+                    status: 'completed',
+                    completedAt: firebase.database.ServerValue.TIMESTAMP
+                 });
+            }
+
             if (peerConnections[kioskId]) {
-                peerConnections[kioskId].close();
+                const pcData = peerConnections[kioskId];
+                if (pcData.statusListener) {
+                    db.ref(`kiosk/liveFeeds/${kioskId}/status`).off('value', pcData.statusListener);
+                }
+                if (pcData.pc && pcData.pc.signalingState !== 'closed') {
+                    pcData.pc.close();
+                }
                 delete peerConnections[kioskId];
             }
+            
             db.ref(`kiosk/liveFeeds/${kioskId}/webrtc/kioskCandidates`).off();
             db.ref(`kiosk/liveFeeds/${kioskId}`).update({ status: 'active_idle', webrtc: null });
 
@@ -705,14 +853,30 @@
                 const calls = snapshot.val() || {};
                 container.innerHTML = '';
                 let activeCalls = 0;
-                const newCallKeys = new Set();
+                const currentCallKeys = new Set();
                 
+                const currentlyRingingKiosks = new Map();
+
                 Object.keys(calls).forEach(kioskId => {
                     const call = calls[kioskId];
                     if (call.status === 'help_requested' || call.status === 'payment_verification_pending') {
                         activeCalls++;
-                        newCallKeys.add(kioskId);
+                        currentCallKeys.add(kioskId);
                         const isNew = !knownLiveCallKeys.has(kioskId);
+
+                        const logEntry = callHistory.find(log => log.kioskId === kioskId && log.status === 'ringing');
+                        if(logEntry) currentlyRingingKiosks.set(kioskId, logEntry.key);
+
+                        if (isNew) {
+                            notificationSound.play().catch(e => console.error("Sound play failed:", e));
+                            if (call.status === 'payment_verification_pending' && call.orderInfo && call.orderInfo.number) {
+                                const order = allOrders.find(o => o.orderNumber === call.orderInfo.number);
+                                const customerName = order ? order.customerName : 'A customer';
+                                speak(`${customerName} aapko payment verification ke liye call kar rahe hain.`);
+                            } else if (call.status === 'help_requested') {
+                                speak('Ek customer help ke liye call kar rahe hain.');
+                            }
+                        }
 
                         let callInfo = call.status === 'help_requested' ?
                             `<p class="font-bold text-lg text-gray-800">Help Request</p>` :
@@ -731,26 +895,157 @@
                         container.appendChild(card);
                     }
                 });
-
-                if(newCallKeys.size > knownLiveCallKeys.size && knownLiveCallKeys.size > 0){
-                    notificationSound.play().catch(e => console.error("Sound play failed:", e));
+                
+                for (const [kioskId, logKey] of previouslyRingingKiosks.entries()) {
+                    if (!currentlyRingingKiosks.has(kioskId)) {
+                        const logEntry = callHistory.find(log => log.key === logKey);
+                        if (logEntry && logEntry.status === 'ringing') {
+                            db.ref(`kiosk/callLogs/${logKey}`).update({ status: 'missed' });
+                        }
+                    }
                 }
-                knownLiveCallKeys = newCallKeys;
+                previouslyRingingKiosks = currentlyRingingKiosks;
 
+                knownLiveCallKeys = currentCallKeys;
                 noCallsMsg.classList.toggle('hidden', activeCalls > 0);
             });
-            callsRef.once('value', snapshot => { if (snapshot.val()) knownLiveCallKeys = new Set(Object.keys(snapshot.val())); });
+            
+            callsRef.once('value', snapshot => { 
+                if (snapshot.val()) {
+                    const calls = snapshot.val();
+                    const activeCallKeys = Object.keys(calls).filter(kioskId => 
+                        calls[kioskId].status === 'help_requested' || calls[kioskId].status === 'payment_verification_pending'
+                    );
+                    knownLiveCallKeys = new Set(activeCallKeys);
+                }
+            });
         }
 
+        function updateNotificationBadge() {
+            const badge = document.getElementById('notification-badge');
+            if (unreadCallCount > 0) {
+                badge.textContent = unreadCallCount > 9 ? '9+' : unreadCallCount;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        function renderCallHistory() {
+            const listEl = document.getElementById('notification-list');
+            const noMsgEl = document.getElementById('no-notifications-msg');
+            listEl.innerHTML = '';
+
+            if (callHistory.length === 0) {
+                noMsgEl.classList.remove('hidden');
+                return;
+            }
+            noMsgEl.classList.add('hidden');
+
+            const statusInfo = {
+                missed: { icon: '<svg class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg>', text: 'Missed Call', color: 'text-red-700' },
+                completed: { icon: '<svg class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>', text: 'Completed Call', color: 'text-green-700' },
+                cancelled_by_customer: { icon: '<svg class="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>', text: 'Cancelled by Customer', color: 'text-yellow-700' },
+                answered: { icon: '<svg class="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"></path></svg>', text: 'Answered', color: 'text-blue-700' }
+            };
+
+            callHistory.forEach(call => {
+                const info = statusInfo[call.status] || { icon: '', text: call.status, color: 'text-gray-700' };
+                const item = document.createElement('div');
+                item.className = `p-3 flex items-start gap-3 border-b last:border-b-0 hover:bg-gray-50 ${!call.adminSaw ? 'bg-indigo-50' : ''}`;
+                item.innerHTML = `
+                    <div class="flex-shrink-0 mt-1">${info.icon}</div>
+                    <div>
+                        <p class="font-semibold ${info.color}">${info.text}</p>
+                        <p class="text-sm text-gray-600">${call.callType} from ${call.kioskName}</p>
+                        <p class="text-xs text-gray-400">${timeAgo(call.initiatedAt)}</p>
+                    </div>
+                `;
+                listEl.appendChild(item);
+            });
+        }
+
+        function listenForCallLogs() {
+            const logsRef = db.ref('kiosk/callLogs').limitToLast(50);
+            logsRef.on('value', snapshot => {
+                const logs = snapshot.val() || {};
+                const newHistory = Object.values(logs).sort((a, b) => b.initiatedAt - a.initiatedAt);
+                
+                const newUnreadCount = newHistory.filter(call => !call.adminSaw).length;
+                if (newUnreadCount > unreadCallCount) {
+                     document.getElementById('notification-sound').play().catch(e => console.error(e));
+                }
+                unreadCallCount = newUnreadCount;
+                callHistory = newHistory;
+
+                renderCallHistory();
+                updateNotificationBadge();
+            });
+        }
 
         // --- EVENT LISTENERS ---
         document.addEventListener('DOMContentLoaded', () => {
             if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
             db = firebase.database();
             
+            if ('speechSynthesis' in window) window.speechSynthesis.getVoices();
+            
+            listenForCallLogs();
             fetchAllOrders();
             listenForKioskRequests();
             listenForLiveCalls();
+
+            const qrSettingsForm = document.getElementById('qr-settings-form');
+            const upiIdInput = document.getElementById('upi-id-input');
+            const qrCodeUpload = document.getElementById('qr-code-upload');
+            const qrCodePreview = document.getElementById('qr-code-preview');
+            let currentQrBase64 = '';
+
+            // Load existing QR settings
+            db.ref('kiosk/paymentSettings').on('value', snapshot => {
+                const settings = snapshot.val();
+                if (settings) {
+                    upiIdInput.value = settings.upiId || '';
+                    if (settings.qrCodeBase64) {
+                        qrCodePreview.src = settings.qrCodeBase64;
+                        currentQrBase64 = settings.qrCodeBase64;
+                    }
+                }
+            });
+
+            // Handle QR file upload
+            qrCodeUpload.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        qrCodePreview.src = event.target.result;
+                        currentQrBase64 = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+
+            // Handle QR form submit
+            qrSettingsForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const upiId = upiIdInput.value.trim();
+                
+                const settings = {
+                    upiId: upiId,
+                    qrCodeBase64: currentQrBase64
+                };
+
+                db.ref('kiosk/paymentSettings').set(settings)
+                    .then(() => {
+                        showToast("Payment settings saved successfully!");
+                    })
+                    .catch(err => {
+                        console.error(err);
+                        showToast("Error saving settings.", 4000);
+                    });
+            });
+
 
             document.getElementById('search-input').addEventListener('input', (e) => { state.search = e.target.value; render(); });
             document.getElementById('filter-buttons').addEventListener('click', (e) => {
@@ -799,15 +1094,34 @@
             });
 
             document.getElementById('close-call-modal-btn').addEventListener('click', e => {
-                // Find which call this modal is for if we support multiple, for now, assume one.
                 const activeKioskId = Object.keys(peerConnections)[0];
-                if(activeKioskId) endAdminCall(activeKioskId);
+                if(activeKioskId) signalAndEndCall(activeKioskId);
             });
 
             document.getElementById('confirmation-cancel-btn').addEventListener('click', () => document.getElementById('confirmation-modal').classList.add('hidden'));
             document.getElementById('confirmation-confirm-btn').addEventListener('click', () => confirmationCallback && confirmationCallback());
+            
+            const bellBtn = document.getElementById('notification-bell-btn');
+            const dropdown = document.getElementById('notification-dropdown');
+            bellBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.classList.toggle('hidden');
+                if (!dropdown.classList.contains('hidden')) {
+                    const updates = {};
+                    callHistory.forEach(call => {
+                        if (!call.adminSaw) updates[call.key + '/adminSaw'] = true;
+                    });
+                    if (Object.keys(updates).length > 0) {
+                        db.ref('kiosk/callLogs').update(updates);
+                    }
+                }
+            });
+            document.addEventListener('click', (e) => {
+                if (!bellBtn.contains(e.target) && !dropdown.contains(e.target)) {
+                    dropdown.classList.add('hidden');
+                }
+            });
         });
     </script>
-
 
 <script src="./script.js"></script></body></html>
