@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin panel </title><meta name="title" content="Kiosk admin panel "><meta name="description" content="Kiosk app order management "><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="stylesheet" href="./style.css"><script src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js" async=""></script><script type="importmap">{
+  "imports": {}
+}</script></head><body>
+
+
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Order Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display.swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .modal { transition: opacity 0.25s ease; }
+        th.sortable { cursor: pointer; user-select: none; }
+        th.sortable:hover { background-color: #f9fafb; }
+        .sort-asc::after { content: ' ▲'; font-size: 0.8em; }
+        .sort-desc::after { content: ' ▼'; font-size: 0.8em; }
+        .filter-btn.active { background-color: #4f46e5; color: white; border-color: #4f46e5; }
+        .status-badge { padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; text-transform: capitalize; }
+        .status-Pending { background-color: #fef3c7; color: #92400e; }
+        .status-InProgress { background-color: #dbeafe; color: #1e40af; }
+        .status-Completed { background-color: #d1fae5; color: #065f46; }
+        .status-Cancelled { background-color: #fee2e2; color: #991b1b; }
+        .request-card.new-request {
+            animation: fadeIn 0.5s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+
+
+    <audio id="notification-sound" src="https://actions.google.com/sounds/v1/alarms/notification_high_intensity.mp3" preload="auto"></audio>
+    <div class="max-w-7xl mx-auto space-y-8">
+        <!-- Header & Summary Cards -->
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-6">
+                <div class="bg-white p-5 rounded-xl shadow-sm"><p class="text-sm text-gray-500">Total Orders</p><p id="total-orders" class="text-2xl font-bold">0</p></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><p class="text-sm text-gray-500">Total Revenue</p><p id="total-revenue" class="text-2xl font-bold">₹0</p></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><p class="text-sm text-gray-500">Total Outstanding</p><p id="total-outstanding" class="text-2xl font-bold text-red-600">₹0</p></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><p class="text-sm text-gray-500">Completed Orders</p><p id="completed-orders" class="text-2xl font-bold">0</p></div>
+            </div>
+        </div>
+
+        <!-- Kiosk Order Requests Panel -->
+        <div class="bg-white rounded-xl shadow-sm">
+            <div class="p-6 border-b">
+                <h2 class="text-xl font-bold text-gray-800">New Order Requests from Kiosk</h2>
+                <p class="text-sm text-gray-500 mt-1">Process requests to convert them into formal orders.</p>
+            </div>
+            <div id="kiosk-requests-container" class="p-6 space-y-4">
+                <!-- Request cards will be injected here -->
+            </div>
+            <p id="no-kiosk-requests-message" class="hidden p-6 text-center text-gray-500">No pending requests from the kiosk.</p>
+        </div>
+
+        <!-- Orders Table -->
+        <div class="bg-white rounded-xl shadow-sm">
+            <div class="p-6 border-b">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <h2 class="text-xl font-bold text-gray-800">All Orders</h2>
+                    <a href="Auto.html" target="_blank" class="w-full sm:w-auto text-center bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-indigo-700">+ New Order</a>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                    <input id="search-input" type="text" placeholder="Search by name, mobile, order #" class="md:col-span-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    <div id="filter-buttons" class="md:col-span-2 flex flex-wrap gap-2 items-center">
+                        <span class="text-sm font-medium text-gray-600">Filter:</span>
+                        <button class="filter-btn active px-3 py-1 text-sm font-medium rounded-md bg-white border border-gray-300" data-filter="all">All</button>
+                        <button class="filter-btn px-3 py-1 text-sm font-medium rounded-md bg-white border border-gray-300" data-filter="Pending">Pending</button>
+                        <button class="filter-btn px-3 py-1 text-sm font-medium rounded-md bg-white border border-gray-300" data-filter="In Progress">In Progress</button>
+                        <button class="filter-btn px-3 py-1 text-sm font-medium rounded-md bg-white border border-gray-300" data-filter="Completed">Completed</button>
+                    </div>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="sortable sort-desc px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort="bookingDate">Date</th>
+                            <th scope="col" class="sortable px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort="orderNumber">Order #</th>
+                            <th scope="col" class="sortable px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort="customerName">Customer</th>
+                            <th scope="col" class="sortable px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort="pickupDate">Pickup Date</th>
+                            <th scope="col" class="sortable px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort="total">Total</th>
+                            <th scope="col" class="sortable px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort="balance">Balance</th>
+                            <th scope="col" class="sortable px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort="status">Status</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-table-body" class="bg-white divide-y divide-gray-200"></tbody>
+                </table>
+                <div id="empty-table-message" class="hidden text-center p-8 text-gray-500"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Order Details & Edit Modal -->
+    <div id="order-modal" class="modal hidden fixed inset-0 bg-gray-600 bg-opacity-75 overflow-y-auto h-full w-full flex items-center justify-center p-4 z-40">
+        <div id="order-modal-content" class="relative mx-auto p-6 border w-full max-w-3xl shadow-lg rounded-xl bg-white max-h-[90vh] flex flex-col">
+            <!-- Content will be injected by JS -->
+        </div>
+    </div>
+    
+    <!-- Confirmation Modal -->
+    <div id="confirmation-modal" class="modal hidden fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
+        <div class="relative mx-auto p-6 w-full max-w-sm shadow-lg rounded-xl bg-white text-center">
+            <h3 class="text-lg font-medium text-gray-900">Are you sure?</h3>
+            <p class="mt-2 text-sm text-gray-500">This action cannot be undone.</p>
+            <div class="mt-4 flex justify-center space-x-2">
+                <button id="confirmation-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancel</button>
+                <button id="confirmation-confirm-btn" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">Delete</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyC0_DQIiyaVQllFH4pxH1Dm3r2kFXXoOgc",
+          authDomain: "navrosetailorapp.firebaseapp.com",
+          databaseURL: "https://navrosetailorapp-default-rtdb.asia-southeast1.firebasedatabase.app",
+          projectId: "navrosetailorapp",
+        };
+
+        let db;
+        let allOrders = [];
+        let state = {
+            filter: 'all',
+            search: '',
+            sort: { key: 'bookingDate', order: 'desc' }
+        };
+        let confirmationCallback = null;
+        let knownKioskRequestKeys = new Set(); 
+
+        // --- UTILS ---
+        const calculateTotals = (order) => {
+            let total = 0;
+            if (order.type === 'stitching' && order.items) {
+                total = order.items.reduce((sum, item) => sum + (parseFloat(item.charges) || 0), 0);
+            } else if (order.charges) {
+                total = parseFloat(order.charges);
+            }
+            const received = order.receivedPayment || 0;
+            const balance = total - received;
+            return { total, received, balance };
+        };
+
+        const formatDate = (isoString) => isoString ? new Date(isoString).toLocaleDateString('en-IN') : 'N/A';
+        const formatCurrency = (amount) => `₹${Number(amount || 0).toFixed(2)}`;
+        
+        // --- DATA FETCH & RENDER (Full OMS) ---
+        function fetchAllOrders() {
+            db.ref('orders').on('value', snapshot => {
+                const data = snapshot.val() || {};
+                allOrders = Object.entries(data).map(([key, value]) => ({ 
+                    id: key, 
+                    ...value,
+                    pickupDate: value.type === 'stitching' ? value.items?.[0]?.pickupDate : value.pickupDate 
+                }));
+                render();
+            });
+        }
+
+        function render() {
+            renderSummaryCards();
+            renderOrdersTable();
+        }
+
+        function renderSummaryCards() {
+            let totalRevenue = 0, totalOutstanding = 0, completedCount = 0;
+            allOrders.forEach(order => {
+                const { total, balance } = calculateTotals(order);
+                totalRevenue += (total - balance);
+                totalOutstanding += balance;
+                if(order.status === 'Completed') completedCount++;
+            });
+            document.getElementById('total-orders').textContent = allOrders.length;
+            document.getElementById('total-revenue').textContent = formatCurrency(totalRevenue);
+            document.getElementById('total-outstanding').textContent = formatCurrency(totalOutstanding);
+            document.getElementById('completed-orders').textContent = completedCount;
+        }
+
+        function renderOrdersTable() {
+            const tbody = document.getElementById('orders-table-body');
+            const emptyMsg = document.getElementById('empty-table-message');
+            
+            let filtered = allOrders.filter(order => {
+                if (state.filter !== 'all' && order.status !== state.filter) return false;
+                if (state.search) {
+                    const s = state.search.toLowerCase();
+                    return order.customerName.toLowerCase().includes(s) ||
+                           order.customerMobile.includes(s) ||
+                           order.orderNumber.toLowerCase().includes(s);
+                }
+                return true;
+            });
+
+            filtered.sort((a, b) => {
+                let valA = a[state.sort.key] || '';
+                let valB = b[state.sort.key] || '';
+                if(state.sort.key === 'balance') valA = calculateTotals(a).balance;
+                if(state.sort.key === 'total') valA = calculateTotals(a).total;
+                
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+                
+                if (valA < valB) return state.sort.order === 'asc' ? -1 : 1;
+                if (valA > valB) return state.sort.order === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '';
+                emptyMsg.textContent = 'No orders match your criteria.';
+                emptyMsg.classList.remove('hidden');
+                return;
+            }
+            emptyMsg.classList.add('hidden');
+
+            tbody.innerHTML = filtered.map(order => {
+                const { total, balance } = calculateTotals(order);
+                return `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${formatDate(order.bookingDate)}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">${order.orderNumber}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${order.customerName}<br><span class="text-xs text-gray-500">${order.customerMobile}</span></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${formatDate(order.pickupDate)}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${formatCurrency(total)}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold ${balance > 0 ? 'text-red-600' : 'text-green-600'}">${formatCurrency(balance)}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="status-badge status-${order.status.replace(' ','')}">${order.status}</span></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-3">
+                            <button class="action-btn-view text-indigo-600 hover:text-indigo-900" data-id="${order.id}">View/Edit</button>
+                            <button class="action-btn-delete text-red-600 hover:text-red-900" data-id="${order.id}">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // --- MODAL & ACTIONS (Full OMS) ---
+        function openOrderModal(orderId) {
+            const order = allOrders.find(o => o.id === orderId);
+            if (!order) return;
+            const content = document.getElementById('order-modal-content');
+
+            const { total, received, balance } = calculateTotals(order);
+            const itemsHtml = (order.items || [{item: order.description, charges: order.charges}]).map((item, index) => `
+                <div class="grid grid-cols-12 gap-2 items-center">
+                    <div class="col-span-8"><input type="text" class="w-full border p-1 rounded" value="${item.item || item.description}" data-item-index="${index}" data-field="item"></div>
+                    <div class="col-span-4"><input type="number" class="w-full border p-1 rounded" value="${item.charges || item.amount}" data-item-index="${index}" data-field="charges"></div>
+                </div>`).join('');
+
+            const paymentsHtml = (order.payments || []).map(p => `<li class="flex justify-between text-sm py-1 border-b"><span>${formatDate(p.date)} (${p.mode})</span><span>${formatCurrency(p.amount)}</span></li>`).join('');
+
+            content.innerHTML = `
+                <div class="flex justify-between items-center pb-4 border-b">
+                    <h3 class="text-xl font-bold">Order #${order.orderNumber}</h3>
+                    <button id="close-modal-btn" class="text-2xl">&times;</button>
+                </div>
+                <div class="flex-grow overflow-y-auto py-4">
+                    <form id="edit-order-form" data-id="${order.id}">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label class="font-semibold">Customer</label><input type="text" id="edit-customerName" value="${order.customerName}" class="w-full border p-2 rounded mt-1"></div>
+                            <div><label class="font-semibold">Mobile</label><input type="tel" id="edit-customerMobile" value="${order.customerMobile}" class="w-full border p-2 rounded mt-1"></div>
+                            <div><label class="font-semibold">Pickup Date</label><input type="date" id="edit-pickupDate" value="${order.pickupDate}" class="w-full border p-2 rounded mt-1"></div>
+                            <div>
+                                <label class="font-semibold">Status</label>
+                                <select id="edit-status" class="w-full border p-2 rounded mt-1">
+                                    <option ${order.status === 'Pending' ? 'selected' : ''}>Pending</option>
+                                    <option ${order.status === 'In Progress' ? 'selected' : ''}>In Progress</option>
+                                    <option ${order.status === 'Completed' ? 'selected' : ''}>Completed</option>
+                                    <option ${order.status === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <label class="font-semibold">Items</label>
+                            <div id="edit-items-container" class="space-y-2 mt-1">${itemsHtml}</div>
+                        </div>
+                        <div class="text-right mt-4"><button type="submit" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg">Save Changes</button></div>
+                    </form>
+                    <div class="mt-6 border-t pt-4">
+                        <h4 class="font-bold text-lg">Payments</h4>
+                        <div class="grid grid-cols-2 gap-6 mt-2">
+                            <div>
+                                <ul class="space-y-1">${paymentsHtml}</ul>
+                                <div class="font-bold mt-2 pt-2 border-t text-sm">
+                                    <p class="flex justify-between">Total: <span>${formatCurrency(total)}</span></p>
+                                    <p class="flex justify-between">Received: <span>${formatCurrency(received)}</span></p>
+                                    <p class="flex justify-between text-lg ${balance > 0 ? 'text-red-600' : 'text-green-600'}">Balance: <span>${formatCurrency(balance)}</span></p>
+                                </div>
+                            </div>
+                            <form id="add-payment-form" data-id="${order.id}">
+                                <h5 class="font-semibold">Add Payment</h5>
+                                <input type="number" id="payment-amount" placeholder="Amount" required class="w-full border p-2 rounded mt-1">
+                                <select id="payment-mode" class="w-full border p-2 rounded mt-1">
+                                    <option>Cash</option><option>Online</option><option>Card</option>
+                                </select>
+                                <button type="submit" class="w-full mt-2 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg">Add Payment</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('order-modal').classList.remove('hidden');
+        }
+
+        function handleSaveChanges(form, orderId) {
+            const order = allOrders.find(o => o.id === orderId);
+            const updates = {
+                customerName: form.querySelector('#edit-customerName').value,
+                customerMobile: form.querySelector('#edit-customerMobile').value,
+                status: form.querySelector('#edit-status').value,
+                lastUpdated: new Date().toISOString()
+            };
+            const pickupDate = form.querySelector('#edit-pickupDate').value;
+            
+            const newItems = [];
+            form.querySelectorAll('#edit-items-container .grid').forEach(row => {
+                newItems.push({
+                    item: row.querySelector('[data-field="item"]').value,
+                    charges: parseFloat(row.querySelector('[data-field="charges"]').value) || 0,
+                    pickupDate: pickupDate, 
+                });
+            });
+            
+            if(order.type === 'stitching') {
+                updates.items = newItems;
+            } else { 
+                updates.description = newItems[0].item;
+                updates.charges = newItems[0].charges;
+                updates.pickupDate = pickupDate;
+            }
+
+            db.ref('orders/' + orderId).update(updates).then(() => {
+                document.getElementById('order-modal').classList.add('hidden');
+            });
+        }
+        
+        function handleAddPayment(form, orderId) {
+            const order = allOrders.find(o => o.id === orderId);
+            const amount = parseFloat(form.querySelector('#payment-amount').value);
+            if (!amount || amount <= 0) return;
+            
+            const newPayment = {
+                id: Date.now(),
+                amount: amount,
+                date: new Date().toISOString(),
+                mode: form.querySelector('#payment-mode').value
+            };
+            const updatedPayments = [...(order.payments || []), newPayment];
+            const newReceived = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
+
+            db.ref('orders/' + orderId).update({
+                payments: updatedPayments,
+                receivedPayment: newReceived
+            }).then(() => {
+                openOrderModal(orderId); 
+            });
+        }
+        
+        // --- KIOSK REQUESTS LOGIC ---
+        function getNextOrderNumber() {
+            const prefix = 'AUTO';
+            const autoOrders = allOrders.filter(o => o.orderNumber && o.orderNumber.startsWith(prefix + '-'));
+            const lastNumber = autoOrders.reduce((max, o) => {
+                const numPart = o.orderNumber.split('-')[1];
+                if (numPart) {
+                    const num = parseInt(numPart, 10);
+                    return Math.max(max, isNaN(num) ? 0 : num);
+                }
+                return max;
+            }, 0);
+            return `${prefix}-${String(lastNumber + 1).padStart(3, '0')}`;
+        }
+        
+        async function handleProcessRequestSubmit(e) {
+            e.preventDefault();
+            const form = e.target;
+            const requestKey = form.dataset.key;
+
+            const newOrder = {
+                id: '', // Will be set after push
+                orderNumber: getNextOrderNumber(),
+                customerName: form.querySelector('#proc-customerName').value,
+                customerMobile: form.querySelector('#proc-customerMobile').value,
+                type: form.querySelector('#proc-order-type').value,
+                bookingDate: new Date().toISOString(),
+                lastUpdated: new Date().toISOString(),
+                status: 'Pending',
+                items: [],
+                payments: [],
+                receivedPayment: 0,
+            };
+
+            const pickupDate = form.querySelector('#proc-pickupDate').value;
+            form.querySelectorAll('#proc-items-container .item-row').forEach(row => {
+                newOrder.items.push({
+                    item: row.querySelector('input[data-field="item"]').value.trim(),
+                    charges: parseFloat(row.querySelector('input[data-field="charges"]').value) || 0,
+                    pickupDate: pickupDate,
+                });
+            });
+
+            const paymentAmount = parseFloat(form.querySelector('#proc-payment-amount').value);
+            if (paymentAmount > 0) {
+                const newPayment = {
+                    id: Date.now(),
+                    amount: paymentAmount,
+                    date: new Date().toISOString(),
+                    mode: form.querySelector('#proc-payment-mode').value
+                };
+                newOrder.payments.push(newPayment);
+                newOrder.receivedPayment = paymentAmount;
+            }
+
+            try {
+                const newOrderRef = db.ref('orders').push();
+                newOrder.id = newOrderRef.key;
+                await newOrderRef.set(newOrder);
+                await db.ref('kiosk/orderRequests/' + requestKey).remove();
+                document.getElementById('order-modal').classList.add('hidden');
+            } catch (error) {
+                console.error("Failed to save processed order:", error);
+                alert("Error saving order. Please try again.");
+            }
+        }
+
+        function openProcessRequestModal(request) {
+            const modalContent = document.getElementById('order-modal-content');
+            modalContent.innerHTML = `
+                <div class="flex justify-between items-center pb-4 border-b">
+                    <h3 class="text-xl font-bold">Process Kiosk Request</h3>
+                    <button id="close-modal-btn" class="text-2xl">&times;</button>
+                </div>
+                <div class="flex-grow overflow-y-auto py-4">
+                    <form id="process-request-form" data-key="${request.key}">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label class="font-semibold">Customer</label><input type="text" id="proc-customerName" value="${request.name}" class="w-full border p-2 rounded mt-1"></div>
+                            <div><label class="font-semibold">Mobile</label><input type="tel" id="proc-customerMobile" value="${request.mobile}" class="w-full border p-2 rounded mt-1"></div>
+                        </div>
+                        <div class="mt-4">
+                            <label class="font-semibold">Items</label>
+                            <div id="proc-items-container" class="space-y-2 mt-1"></div>
+                            <button type="button" id="proc-add-item-btn" class="mt-2 text-sm text-indigo-600 hover:underline font-semibold">+ Add Item</button>
+                        </div>
+                        <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label class="font-semibold">Pickup Date</label><input type="date" id="proc-pickupDate" class="w-full border p-2 rounded mt-1" required></div>
+                            <div><label class="font-semibold">Order Type</label><select id="proc-order-type" class="w-full border p-2 rounded mt-1"><option>stitching</option><option>alteration</option></select></div>
+                        </div>
+                        <div class="mt-6 border-t pt-4">
+                            <h4 class="font-bold text-lg">Initial Payment</h4>
+                            <div class="grid grid-cols-2 gap-6 mt-2">
+                                <input type="number" id="proc-payment-amount" placeholder="Amount" class="w-full border p-2 rounded">
+                                <select id="proc-payment-mode" class="w-full border p-2 rounded"><option>Cash</option><option>Online</option><option>Card</option></select>
+                            </div>
+                        </div>
+                        <div class="text-right mt-6 border-t pt-4"><button type="submit" class="bg-indigo-600 text-white font-semibold py-2 px-6 rounded-lg">Save Order</button></div>
+                    </form>
+                </div>`;
+            
+            const itemsContainer = modalContent.querySelector('#proc-items-container');
+            const addItem = (name = '', charges = '') => {
+                const itemRow = document.createElement('div');
+                itemRow.className = 'item-row grid grid-cols-12 gap-2 items-center';
+                itemRow.innerHTML = `
+                    <div class="col-span-8"><input type="text" data-field="item" value="${name}" placeholder="Item Description" class="w-full border p-1 rounded"></div>
+                    <div class="col-span-3"><input type="number" data-field="charges" value="${charges}" placeholder="Charges" class="w-full border p-1 rounded"></div>
+                    <div class="col-span-1"><button type="button" class="proc-remove-item-btn text-red-500 hover:text-red-700">&times;</button></div>`;
+                itemsContainer.appendChild(itemRow);
+            };
+            
+            addItem(request.description); // Add initial item from kiosk
+            
+            modalContent.querySelector('#proc-add-item-btn').addEventListener('click', () => addItem());
+            itemsContainer.addEventListener('click', e => {
+                if(e.target.classList.contains('proc-remove-item-btn')) e.target.closest('.item-row').remove();
+            });
+            
+            modalContent.querySelector('#process-request-form').addEventListener('submit', handleProcessRequestSubmit);
+
+            document.getElementById('order-modal').classList.remove('hidden');
+        }
+
+        function listenForKioskRequests() {
+            const requestsRef = db.ref('kiosk/orderRequests');
+            const container = document.getElementById('kiosk-requests-container');
+            const noRequestsMsg = document.getElementById('no-kiosk-requests-message');
+            const notificationSound = document.getElementById('notification-sound');
+
+            requestsRef.on('value', snapshot => {
+                const requests = snapshot.val();
+                if (!requests || Object.keys(requests).length === 0) {
+                    container.innerHTML = '';
+                    noRequestsMsg.classList.remove('hidden');
+                    knownKioskRequestKeys = new Set();
+                    return;
+                }
+                noRequestsMsg.classList.add('hidden');
+                const newRequestKeys = new Set(Object.keys(requests));
+                if (newRequestKeys.size > knownKioskRequestKeys.size && knownKioskRequestKeys.size > 0) {
+                    notificationSound.play().catch(e => console.error("Sound play failed:", e));
+                }
+                container.innerHTML = Object.keys(requests).map(key => {
+                    const request = requests[key];
+                    const isNew = !knownKioskRequestKeys.has(key);
+                    return `
+                        <div class="request-card ${isNew ? 'new-request' : ''} bg-blue-50 p-4 border-l-4 border-blue-500 rounded-r-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div>
+                                <p class="font-bold text-lg text-gray-800">${request.customerName}</p>
+                                <p class="text-sm text-gray-600">Mobile: ${request.customerMobile}</p>
+                                <p class="mt-2 text-gray-700">${request.description}</p>
+                            </div>
+                            <button class="process-request-btn w-full sm:w-auto bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-indigo-700 flex-shrink-0" data-key="${key}" data-name="${encodeURIComponent(request.customerName)}" data-mobile="${encodeURIComponent(request.customerMobile)}" data-description="${encodeURIComponent(request.description)}">
+                                Process Request
+                            </button>
+                        </div>`;
+                }).join('');
+                knownKioskRequestKeys = newRequestKeys;
+            });
+            requestsRef.once('value', snapshot => { if(snapshot.val()) knownKioskRequestKeys = new Set(Object.keys(snapshot.val())); });
+
+            container.addEventListener('click', (e) => {
+                if (e.target && e.target.classList.contains('process-request-btn')) {
+                    const dataset = e.target.dataset;
+                    openProcessRequestModal({
+                        key: dataset.key,
+                        name: decodeURIComponent(dataset.name),
+                        mobile: decodeURIComponent(dataset.mobile),
+                        description: decodeURIComponent(dataset.description),
+                    });
+                }
+            });
+        }
+
+        // --- EVENT LISTENERS ---
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+            db = firebase.database();
+            
+            fetchAllOrders();
+            listenForKioskRequests();
+
+            document.getElementById('search-input').addEventListener('input', (e) => { state.search = e.target.value; render(); });
+            document.getElementById('filter-buttons').addEventListener('click', (e) => {
+                if (e.target.tagName === 'BUTTON') {
+                    document.querySelectorAll('#filter-buttons .filter-btn').forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                    state.filter = e.target.dataset.filter;
+                    render();
+                }
+            });
+            document.querySelector('thead').addEventListener('click', e => {
+                const th = e.target.closest('th.sortable');
+                if (th) {
+                    const sortKey = th.dataset.sort;
+                    if (state.sort.key === sortKey) state.sort.order = state.sort.order === 'asc' ? 'desc' : 'asc';
+                    else { state.sort.key = sortKey; state.sort.order = 'desc'; }
+                    document.querySelectorAll('th.sortable').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+                    th.classList.add(state.sort.order === 'asc' ? 'sort-asc' : 'sort-desc');
+                    render();
+                }
+            });
+
+            document.getElementById('orders-table-body').addEventListener('click', e => {
+                const id = e.target.dataset.id;
+                if (!id) return;
+                if (e.target.classList.contains('action-btn-view')) openOrderModal(id);
+                if (e.target.classList.contains('action-btn-delete')) {
+                    document.getElementById('confirmation-modal').classList.remove('hidden');
+                    confirmationCallback = () => {
+                        db.ref('orders/' + id).remove();
+                        document.getElementById('confirmation-modal').classList.add('hidden');
+                    };
+                }
+            });
+
+            document.getElementById('order-modal').addEventListener('click', e => {
+                if (e.target.id === 'close-modal-btn' || e.target.id === 'order-modal') {
+                     document.getElementById('order-modal').classList.add('hidden');
+                }
+            });
+             document.getElementById('order-modal').addEventListener('submit', e => {
+                e.preventDefault();
+                const id = e.target.dataset.id;
+                if (e.target.id === 'edit-order-form') handleSaveChanges(e.target, id);
+                if (e.target.id === 'add-payment-form') handleAddPayment(e.target, id);
+            });
+
+            document.getElementById('confirmation-cancel-btn').addEventListener('click', () => document.getElementById('confirmation-modal').classList.add('hidden'));
+            document.getElementById('confirmation-confirm-btn').addEventListener('click', () => confirmationCallback && confirmationCallback());
+        });
+    </script>
+
+
+<script src="./script.js"></script></body></html>
