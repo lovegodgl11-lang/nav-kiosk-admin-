@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk </title><meta name="title" content="Kiosk "><meta name="description" content="Update payment "><meta charset="UTF-8">
+<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin </title><meta name="title" content="Kiosk admin "><meta name="description" content="Update version "><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="stylesheet" href="./style.css"><script src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js" async=""></script><script type="importmap">{
   "imports": {}
 }</script></head><body>
+
 
 
 
@@ -807,7 +808,7 @@
 
             const { balance } = calculateTotals(order);
             if (balance <= 0) {
-                db.ref(`kiosk/paymentProofs/${proofKey}`).update({ status: 'verified' });
+                await db.ref(`kiosk/paymentProofs/${proofKey}`).update({ status: 'verified', verifiedAmount: 0 });
                 showToast("Order already paid. Proof marked as verified.");
                 return;
             }
@@ -826,7 +827,7 @@
                     payments: updatedPayments,
                     receivedPayment: newReceived
                 });
-                await db.ref(`kiosk/paymentProofs/${proofKey}`).update({ status: 'verified' });
+                await db.ref(`kiosk/paymentProofs/${proofKey}`).update({ status: 'verified', verifiedAmount: verifiedAmount });
                 showToast("Payment approved and order updated!");
             } catch (error) {
                 showToast("Error approving payment: " + error.message);
