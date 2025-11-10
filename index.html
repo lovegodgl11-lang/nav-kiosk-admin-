@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin </title><meta name="title" content="Kiosk admin "><meta name="description" content="Payment, security, call"><meta charset="UTF-8">
+<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk </title><meta name="title" content="Kiosk "><meta name="description" content="Update payment "><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="stylesheet" href="./style.css"><script src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js" async=""></script><script type="importmap">{
   "imports": {}
 }</script></head><body>
+
+
 
 
 
@@ -544,7 +546,7 @@
                 mode: form.querySelector('#payment-mode').value
             };
             const updatedPayments = [...(order.payments || []), newPayment];
-            const newReceived = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
+            const newReceived = updatedPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
 
             db.ref('orders/' + orderId).update({
                 payments: updatedPayments,
@@ -795,7 +797,7 @@
              proofsRef.once('value', snapshot => { if(snapshot.val()) knownPaymentProofKeys = new Set(Object.keys(snapshot.val())); });
         }
 
-        async function handleApproveProof(proofKey, orderKey) {
+        async function handleApproveProof(proofKey, orderKey, verifiedAmount) {
             const order = allOrders.find(o => o.id === orderKey);
             if (!order) {
                 showToast("Error: Associated order not found.");
@@ -812,12 +814,12 @@
             
             const newPayment = {
                 id: Date.now(),
-                amount: balance,
+                amount: verifiedAmount,
                 date: new Date().toISOString(),
                 mode: 'Kiosk Proof Verified'
             };
             const updatedPayments = [...(order.payments || []), newPayment];
-            const newReceived = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
+            const newReceived = updatedPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
 
             try {
                 await db.ref('orders/' + orderKey).update({
@@ -1340,17 +1342,36 @@
 
             document.getElementById('payment-proofs-container').addEventListener('click', e => {
                 const button = e.target.closest('button');
-                if(!button) return;
+                if (!button) return;
 
                 const proofKey = button.dataset.key;
-                if(button.classList.contains('approve-proof-btn')) {
+                if (button.classList.contains('approve-proof-btn')) {
                     const orderKey = button.dataset.orderKey;
-                    handleApproveProof(proofKey, orderKey);
-                } else if(button.classList.contains('reject-proof-btn')) {
+                    const order = allOrders.find(o => o.id === orderKey);
+                    if (!order) {
+                        showToast("Error: Associated order not found.");
+                        return;
+                    }
+                    const { balance } = calculateTotals(order);
+                    
+                    const amountStr = prompt(`Enter amount verified from proof for Order #${order.orderNumber}.\nOutstanding balance is ₹${balance.toFixed(2)}.`, balance.toFixed(2));
+                    
+                    if (amountStr === null) { return; }
+                    
+                    const verifiedAmount = parseFloat(amountStr);
+                    if (isNaN(verifiedAmount) || verifiedAmount <= 0) {
+                        showToast("Invalid amount entered. Please enter a positive number.");
+                        return;
+                    }
+
+                    handleApproveProof(proofKey, orderKey, verifiedAmount);
+
+                } else if (button.classList.contains('reject-proof-btn')) {
                     db.ref(`kiosk/paymentProofs/${proofKey}`).update({ status: 'rejected' });
                     showToast("Payment proof rejected.");
                 }
             });
+
 
             // Security Alert & Login Activity & Proof Listeners
             document.body.addEventListener('click', e => {
