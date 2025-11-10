@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin </title><meta name="title" content="Kiosk admin "><meta name="description" content="Security and login"><meta charset="UTF-8">
+<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin </title><meta name="title" content="Kiosk admin "><meta name="description" content="Payment, security, call"><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="stylesheet" href="./style.css"><script src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js" async=""></script><script type="importmap">{
   "imports": {}
 }</script></head><body>
+
+
 
 
 
@@ -31,7 +33,7 @@
         .status-InProgress { background-color: #dbeafe; color: #1e40af; }
         .status-Completed { background-color: #d1fae5; color: #065f46; }
         .status-Cancelled { background-color: #fee2e2; color: #991b1b; }
-        .request-card.new-request, .call-card.new-call, .alert-card.new-alert, .login-activity-card.new-request {
+        .request-card.new-request, .call-card.new-call, .alert-card.new-alert, .login-activity-card.new-request, .proof-card.new-proof {
             animation: fadeIn 0.5s ease-out;
         }
         @keyframes fadeIn {
@@ -82,6 +84,18 @@
 
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
             <div class="xl:col-span-2 space-y-8">
+                <!-- Pending Payment Proofs Panel -->
+                <div class="bg-white rounded-xl shadow-sm">
+                    <div class="p-6 border-b">
+                        <h2 class="text-xl font-bold text-gray-800">Pending Payment Proofs</h2>
+                        <p class="text-sm text-gray-500 mt-1">Review and approve payments submitted by customers.</p>
+                    </div>
+                    <div id="payment-proofs-container" class="p-6 space-y-4">
+                        <!-- Proof cards will be injected here -->
+                    </div>
+                    <p id="no-payment-proofs-message" class="p-6 text-center text-gray-500">No pending payment proofs.</p>
+                </div>
+
                  <!-- Live Kiosk Calls Panel -->
                 <div class="bg-white rounded-xl shadow-sm">
                     <div class="p-6 border-b">
@@ -268,6 +282,7 @@
         let previouslyRingingKiosks = new Map();
         let knownSecurityAlertKeys = new Set();
         let knownLoginActivityKeys = new Set();
+        let knownPaymentProofKeys = new Set();
 
         // --- UTILS ---
         function showToast(message, duration = 3000) {
@@ -727,6 +742,95 @@
             });
         }
         
+        // --- PAYMENT PROOF LOGIC ---
+        function listenForPaymentProofs() {
+            const proofsRef = db.ref('kiosk/paymentProofs');
+            const container = document.getElementById('payment-proofs-container');
+            const noProofsMsg = document.getElementById('no-payment-proofs-message');
+            const notificationSound = document.getElementById('notification-sound');
+
+            proofsRef.orderByChild('status').equalTo('pending_verification').on('value', snapshot => {
+                const proofs = snapshot.val() || {};
+                const proofKeys = Object.keys(proofs);
+                
+                if(proofKeys.length === 0) {
+                    container.innerHTML = '';
+                    noProofsMsg.classList.remove('hidden');
+                    return;
+                }
+                
+                noProofsMsg.classList.add('hidden');
+                
+                // Check for new proofs to play sound
+                const newProofFound = proofKeys.some(key => !knownPaymentProofKeys.has(key));
+                if (newProofFound && knownPaymentProofKeys.size > 0) {
+                    notificationSound.play().catch(e => console.error("Sound play failed:", e));
+                    speak("New payment proof received.");
+                }
+                
+                container.innerHTML = proofKeys.map(key => {
+                    const proof = proofs[key];
+                    const isNew = !knownPaymentProofKeys.has(key);
+                    return `
+                        <div class="proof-card ${isNew ? 'new-proof' : ''} bg-orange-50 p-4 border-l-4 border-orange-500 rounded-r-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <img src="${proof.imageData}" class="w-24 h-24 object-cover rounded-md cursor-pointer image-thumb">
+                            <div>
+                                <p class="font-bold text-lg text-gray-800">${proof.customerInfo.customerName || 'Unknown'}</p>
+                                <p class="text-sm text-gray-600">Order: #${proof.orderInfo.number || 'N/A'}</p>
+                                <p class="text-xs text-gray-500 mt-1">${timeAgo(proof.timestamp)} from ${proof.kioskId}</p>
+                            </div>
+                            <div class="flex flex-col sm:flex-row items-center gap-2 flex-shrink-0 w-full sm:w-auto">
+                                <button class="approve-proof-btn w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700" data-key="${key}" data-order-key="${proof.orderInfo.firebaseKey}">
+                                    Approve
+                                </button>
+                                <button class="reject-proof-btn w-full bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-red-700" data-key="${key}">
+                                    Reject
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                knownPaymentProofKeys = new Set(proofKeys);
+            });
+             proofsRef.once('value', snapshot => { if(snapshot.val()) knownPaymentProofKeys = new Set(Object.keys(snapshot.val())); });
+        }
+
+        async function handleApproveProof(proofKey, orderKey) {
+            const order = allOrders.find(o => o.id === orderKey);
+            if (!order) {
+                showToast("Error: Associated order not found.");
+                db.ref(`kiosk/paymentProofs/${proofKey}`).update({ status: 'error_order_not_found' });
+                return;
+            }
+
+            const { balance } = calculateTotals(order);
+            if (balance <= 0) {
+                db.ref(`kiosk/paymentProofs/${proofKey}`).update({ status: 'verified' });
+                showToast("Order already paid. Proof marked as verified.");
+                return;
+            }
+            
+            const newPayment = {
+                id: Date.now(),
+                amount: balance,
+                date: new Date().toISOString(),
+                mode: 'Kiosk Proof Verified'
+            };
+            const updatedPayments = [...(order.payments || []), newPayment];
+            const newReceived = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
+
+            try {
+                await db.ref('orders/' + orderKey).update({
+                    payments: updatedPayments,
+                    receivedPayment: newReceived
+                });
+                await db.ref(`kiosk/paymentProofs/${proofKey}`).update({ status: 'verified' });
+                showToast("Payment approved and order updated!");
+            } catch (error) {
+                showToast("Error approving payment: " + error.message);
+            }
+        }
+        
         // --- LIVE CALLS (WebRTC) & NOTIFICATION BELL LOGIC ---
         async function signalAndEndCall(kioskId) {
             const statusSnap = await db.ref(`kiosk/liveFeeds/${kioskId}/status`).once('value');
@@ -746,17 +850,8 @@
 
             let title = 'Incoming Call';
             let actionsHtml = `<button id="end-call-btn" class="w-full bg-red-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-red-700">End Call</button>`;
-            if (kioskData.status === 'payment_verification_pending') {
-                title = `Payment Verification for Order #${kioskData.orderInfo.number}`;
-                actionsHtml = `
-                    <div class="space-y-3">
-                         <p class="text-center text-gray-600">Customer is showing their payment confirmation screen.</p>
-                         <button id="approve-payment-btn" class="w-full bg-green-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-green-700">Approve Payment</button>
-                         <button id="reject-payment-btn" class="w-full bg-yellow-500 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-yellow-600">Reject Payment</button>
-                    </div>
-                    <button id="end-call-btn" class="w-full bg-red-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-red-700">End Call</button>
-                `;
-            } else if (kioskData.status === 'help_requested' && kioskData.customerInfo) {
+            
+            if (kioskData.status === 'help_requested' && kioskData.customerInfo) {
                 title = `Help Request from ${kioskData.customerInfo.customerName}`;
             }
 
@@ -772,12 +867,6 @@
             }
 
             actionsContainer.querySelector('#end-call-btn').onclick = () => signalAndEndCall(kioskId);
-            if (actionsContainer.querySelector('#approve-payment-btn')) {
-                actionsContainer.querySelector('#approve-payment-btn').onclick = () => handlePaymentApproval(kioskId, kioskData, true);
-            }
-            if (actionsContainer.querySelector('#reject-payment-btn')) {
-                 actionsContainer.querySelector('#reject-payment-btn').onclick = () => handlePaymentApproval(kioskId, kioskData, false);
-            }
 
             try {
                 if (!localStream) {
@@ -860,32 +949,6 @@
             }
         }
 
-        async function handlePaymentApproval(kioskId, kioskData, isApproved) {
-            const orderId = kioskData.orderInfo.firebaseKey;
-            const order = allOrders.find(o => o.id === orderId);
-
-            if (isApproved && order) {
-                const { balance } = calculateTotals(order);
-                const newPayment = {
-                    id: Date.now(),
-                    amount: balance,
-                    date: new Date().toISOString(),
-                    mode: 'Kiosk Verified'
-                };
-                const updatedPayments = [...(order.payments || []), newPayment];
-                const newReceived = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
-
-                await db.ref('orders/' + orderId).update({
-                    payments: updatedPayments,
-                    receivedPayment: newReceived
-                });
-            }
-
-            const actionType = isApproved ? 'payment_approved' : 'payment_rejected';
-            await db.ref(`kiosk/liveFeeds/${kioskId}/adminAction`).set({ type: actionType, timestamp: firebase.database.ServerValue.TIMESTAMP });
-            endAdminCall(kioskId);
-        }
-
         function listenForLiveCalls() {
             const callsRef = db.ref('kiosk/liveFeeds');
             const container = document.getElementById('live-calls-container');
@@ -902,7 +965,7 @@
 
                 Object.keys(calls).forEach(kioskId => {
                     const call = calls[kioskId];
-                    if (call.status === 'help_requested' || call.status === 'payment_verification_pending') {
+                    if (call.status === 'help_requested') { // Only listen for help requests now
                         activeCalls++;
                         currentCallKeys.add(kioskId);
                         const isNew = !knownLiveCallKeys.has(kioskId);
@@ -912,28 +975,15 @@
 
                         if (isNew) {
                             notificationSound.play().catch(e => console.error("Sound play failed:", e));
-                            if (call.status === 'payment_verification_pending' && call.orderInfo && call.orderInfo.number) {
-                                const order = allOrders.find(o => o.orderNumber === call.orderInfo.number);
-                                const customerName = order ? order.customerName : 'A customer';
-                                speak(`${customerName} aapko payment verification ke liye call kar rahe hain.`);
-                            } else if (call.status === 'help_requested') {
-                                speak('Ek customer help ke liye call kar rahe hain.');
-                            }
+                            speak('Ek customer help ke liye call kar rahe hain.');
                         }
                         
-                        let callTitle, customerDetails;
-                        if (call.status === 'help_requested') {
-                            callTitle = `<p class="font-bold text-lg text-gray-800">Help Request</p>`;
-                        } else {
-                            callTitle = `<p class="font-bold text-lg text-gray-800">Payment Verification</p><p class="text-sm text-gray-600">Order #${call.orderInfo.number}</p>`;
-                        }
-                        
+                        let callTitle = `<p class="font-bold text-lg text-gray-800">Help Request</p>`;
+                        let customerDetails = `<p class="mt-2 text-gray-700">From: ${call.kioskInfo.name}</p>`;
                         if (call.customerInfo) {
                             customerDetails = `
                                 <p class="font-semibold text-gray-800 mt-2">${call.customerInfo.customerName}</p>
                                 <p class="text-sm text-gray-600">${call.customerInfo.customerMobile}</p>`;
-                        } else {
-                            customerDetails = `<p class="mt-2 text-gray-700">From: ${call.kioskInfo.name}</p>`;
                         }
 
                         const card = document.createElement('div');
@@ -968,7 +1018,7 @@
                 if (snapshot.val()) {
                     const calls = snapshot.val();
                     const activeCallKeys = Object.keys(calls).filter(kioskId => 
-                        calls[kioskId].status === 'help_requested' || calls[kioskId].status === 'payment_verification_pending'
+                        calls[kioskId].status === 'help_requested'
                     );
                     knownLiveCallKeys = new Set(activeCallKeys);
                 }
@@ -1074,7 +1124,7 @@
                     card.className = `alert-card ${isNew ? 'new-alert' : ''} bg-white p-3 rounded-lg flex items-center gap-3 border-l-4 ${alert.acknowledged ? 'border-gray-300 opacity-60' : 'border-red-500'}`;
                     
                     card.innerHTML = `
-                        ${alert.imageData ? `<img src="${alert.imageData}" alt="Capture" class="w-16 h-16 object-cover rounded-md cursor-pointer security-image-thumb">` : `<div class="w-16 h-16 bg-gray-200 flex items-center justify-center rounded-md text-xs text-center text-gray-500">No Image</div>`}
+                        ${alert.imageData ? `<img src="${alert.imageData}" alt="Capture" class="w-16 h-16 object-cover rounded-md cursor-pointer image-thumb">` : `<div class="w-16 h-16 bg-gray-200 flex items-center justify-center rounded-md text-xs text-center text-gray-500">No Image</div>`}
                         <div class="flex-grow">
                             <p class="font-semibold text-sm text-gray-800">${alert.reason}</p>
                             <p class="text-xs text-gray-500">${alert.kioskId} - ${timeAgo(alert.timestamp)}</p>
@@ -1122,7 +1172,7 @@
                     
                     let imageHtml = '';
                     if (activity.imageData) {
-                        imageHtml = `<img src="${activity.imageData}" alt="Login Capture" class="w-16 h-16 object-cover rounded-md cursor-pointer login-image-thumb">`;
+                        imageHtml = `<img src="${activity.imageData}" alt="Login Capture" class="w-16 h-16 object-cover rounded-md cursor-pointer image-thumb">`;
                     } else if (activity.error) {
                         imageHtml = `<div class="w-16 h-16 bg-red-100 flex items-center justify-center rounded-md text-xs text-center text-red-600">Capture Failed</div>`;
                     } else {
@@ -1159,6 +1209,7 @@
             listenForLiveCalls();
             listenForSecurityAlerts();
             listenForLoginActivity();
+            listenForPaymentProofs();
 
             const qrSettingsForm = document.getElementById('qr-settings-form');
             const upiIdInput = document.getElementById('upi-id-input');
@@ -1287,22 +1338,29 @@
                 }
             });
 
-            // Security Alert & Login Activity Listeners
-            document.getElementById('security-alerts-container').addEventListener('click', e => {
-                if (e.target.classList.contains('acknowledge-alert-btn')) {
-                    const key = e.target.dataset.key;
-                    db.ref(`kiosk/securityAlerts/${key}`).update({ acknowledged: true });
-                }
-                if (e.target.classList.contains('security-image-thumb')) {
-                    document.getElementById('modal-image-content').src = e.target.src;
-                    document.getElementById('image-viewer-modal').classList.remove('hidden');
+            document.getElementById('payment-proofs-container').addEventListener('click', e => {
+                const button = e.target.closest('button');
+                if(!button) return;
+
+                const proofKey = button.dataset.key;
+                if(button.classList.contains('approve-proof-btn')) {
+                    const orderKey = button.dataset.orderKey;
+                    handleApproveProof(proofKey, orderKey);
+                } else if(button.classList.contains('reject-proof-btn')) {
+                    db.ref(`kiosk/paymentProofs/${proofKey}`).update({ status: 'rejected' });
+                    showToast("Payment proof rejected.");
                 }
             });
 
-            document.getElementById('login-activity-container').addEventListener('click', e => {
-                if (e.target.classList.contains('login-image-thumb')) {
+            // Security Alert & Login Activity & Proof Listeners
+            document.body.addEventListener('click', e => {
+                 if (e.target.classList.contains('image-thumb')) {
                     document.getElementById('modal-image-content').src = e.target.src;
                     document.getElementById('image-viewer-modal').classList.remove('hidden');
+                }
+                if (e.target.classList.contains('acknowledge-alert-btn')) {
+                    const key = e.target.dataset.key;
+                    db.ref(`kiosk/securityAlerts/${key}`).update({ acknowledged: true });
                 }
             });
 
