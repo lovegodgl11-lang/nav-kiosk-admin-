@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin </title><meta name="title" content="Kiosk admin "><meta name="description" content="Call information "><meta charset="UTF-8">
+<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin </title><meta name="title" content="Kiosk admin "><meta name="description" content="Security and login"><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="stylesheet" href="./style.css"><script src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js" async=""></script><script type="importmap">{
   "imports": {}
 }</script></head><body>
+
+
 
 
 
@@ -29,7 +31,7 @@
         .status-InProgress { background-color: #dbeafe; color: #1e40af; }
         .status-Completed { background-color: #d1fae5; color: #065f46; }
         .status-Cancelled { background-color: #fee2e2; color: #991b1b; }
-        .request-card.new-request, .call-card.new-call {
+        .request-card.new-request, .call-card.new-call, .alert-card.new-alert, .login-activity-card.new-request {
             animation: fadeIn 0.5s ease-out;
         }
         @keyframes fadeIn {
@@ -48,6 +50,7 @@
 
 
     <audio id="notification-sound" src="https://actions.google.com/sounds/v1/alarms/notification_high_intensity.mp3" preload="auto"></audio>
+    <audio id="security-alert-sound" src="https://actions.google.com/sounds/v1/emergency/beeper_emergency_call.mp3" preload="auto"></audio>
     <div class="max-w-7xl mx-auto space-y-8">
         <!-- Header & Summary Cards -->
         <div>
@@ -77,58 +80,86 @@
             </div>
         </div>
 
-        <!-- Live Kiosk Calls Panel -->
-        <div class="bg-white rounded-xl shadow-sm">
-            <div class="p-6 border-b">
-                <h2 class="text-xl font-bold text-gray-800">Live Kiosk Calls</h2>
-                <p class="text-sm text-gray-500 mt-1">Answer incoming video calls from the customer kiosk.</p>
-            </div>
-            <div id="live-calls-container" class="p-6 space-y-4">
-                <!-- Live call cards will be injected here -->
-            </div>
-            <p id="no-live-calls-message" class="p-6 text-center text-gray-500">No active calls from the kiosk.</p>
-        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            <div class="xl:col-span-2 space-y-8">
+                 <!-- Live Kiosk Calls Panel -->
+                <div class="bg-white rounded-xl shadow-sm">
+                    <div class="p-6 border-b">
+                        <h2 class="text-xl font-bold text-gray-800">Live Kiosk Calls</h2>
+                        <p class="text-sm text-gray-500 mt-1">Answer incoming video calls from the customer kiosk.</p>
+                    </div>
+                    <div id="live-calls-container" class="p-6 space-y-4">
+                        <!-- Live call cards will be injected here -->
+                    </div>
+                    <p id="no-live-calls-message" class="p-6 text-center text-gray-500">No active calls from the kiosk.</p>
+                </div>
 
-        <!-- Kiosk Order Requests Panel -->
-        <div class="bg-white rounded-xl shadow-sm">
-            <div class="p-6 border-b">
-                <h2 class="text-xl font-bold text-gray-800">New Order Requests from Kiosk</h2>
-                <p class="text-sm text-gray-500 mt-1">Process requests to convert them into formal orders.</p>
+                <!-- Kiosk Order Requests Panel -->
+                <div class="bg-white rounded-xl shadow-sm">
+                    <div class="p-6 border-b">
+                        <h2 class="text-xl font-bold text-gray-800">New Order Requests from Kiosk</h2>
+                        <p class="text-sm text-gray-500 mt-1">Process requests to convert them into formal orders.</p>
+                    </div>
+                    <div id="kiosk-requests-container" class="p-6 space-y-4">
+                        <!-- Request cards will be injected here -->
+                    </div>
+                    <p id="no-kiosk-requests-message" class="hidden p-6 text-center text-gray-500">No pending requests from the kiosk.</p>
+                </div>
             </div>
-            <div id="kiosk-requests-container" class="p-6 space-y-4">
-                <!-- Request cards will be injected here -->
-            </div>
-            <p id="no-kiosk-requests-message" class="hidden p-6 text-center text-gray-500">No pending requests from the kiosk.</p>
-        </div>
+            <div class="xl:col-span-1 space-y-8">
+                <!-- Login Activity Panel -->
+                <div class="bg-white rounded-xl shadow-sm">
+                    <div class="p-6 border-b flex items-center gap-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path></svg>
+                        <h2 class="text-xl font-bold text-gray-800">Login Activity</h2>
+                    </div>
+                    <div id="login-activity-container" class="p-4 space-y-3 max-h-96 overflow-y-auto">
+                        <!-- Login activity cards will be injected here -->
+                    </div>
+                    <p id="no-login-activity-message" class="p-6 text-center text-gray-500">No recent customer activity.</p>
+                </div>
 
-        <!-- Payment QR Settings Panel -->
-        <div class="bg-white rounded-xl shadow-sm">
-            <div class="p-6 border-b">
-                <h2 class="text-xl font-bold text-gray-800">Payment QR Code Settings</h2>
-                <p class="text-sm text-gray-500 mt-1">Upload your business UPI QR code image and set your UPI ID. This will be shown to customers for payment.</p>
-            </div>
-            <div class="p-6">
-                <form id="qr-settings-form" class="space-y-4 max-w-lg">
-                    <div>
-                        <label for="upi-id-input" class="block text-sm font-medium text-gray-700">UPI ID</label>
-                        <input type="text" id="upi-id-input" placeholder="your-name@oksbi" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                <!-- Security Alerts Panel -->
+                <div class="bg-white rounded-xl shadow-sm">
+                    <div class="p-6 border-b flex items-center gap-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                        <h2 class="text-xl font-bold text-gray-800">Security Alerts</h2>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">QR Code Image</label>
-                        <div class="mt-1 flex items-center gap-4">
-                            <img id="qr-code-preview" src="https://via.placeholder.com/128" alt="QR Code Preview" class="h-32 w-32 object-contain bg-gray-100 rounded-md p-1 border">
-                            <input type="file" id="qr-code-upload" accept="image/png, image/jpeg" class="block text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
-                        </div>
+                    <div id="security-alerts-container" class="p-4 space-y-3 max-h-96 overflow-y-auto">
+                        <!-- Security alert cards will be injected here -->
                     </div>
-                    <div class="text-right">
-                        <button type="submit" class="bg-indigo-600 text-white font-semibold py-2 px-6 rounded-lg shadow-md hover:bg-indigo-700">Save Settings</button>
+                    <p id="no-security-alerts-message" class="p-6 text-center text-gray-500">No security alerts.</p>
+                </div>
+
+                <!-- Payment QR Settings Panel -->
+                <div class="bg-white rounded-xl shadow-sm">
+                    <div class="p-6 border-b">
+                        <h2 class="text-xl font-bold text-gray-800">Payment QR Code Settings</h2>
                     </div>
-                </form>
+                    <div class="p-6">
+                        <form id="qr-settings-form" class="space-y-4">
+                            <div>
+                                <label for="upi-id-input" class="block text-sm font-medium text-gray-700">UPI ID</label>
+                                <input type="text" id="upi-id-input" placeholder="your-name@oksbi" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">QR Code Image</label>
+                                <div class="mt-1 flex items-center gap-4">
+                                    <img id="qr-code-preview" src="https://via.placeholder.com/128" alt="QR Code Preview" class="h-24 w-24 object-contain bg-gray-100 rounded-md p-1 border">
+                                    <input type="file" id="qr-code-upload" accept="image/png, image/jpeg" class="block text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <button type="submit" class="bg-indigo-600 text-white font-semibold py-2 px-6 rounded-lg shadow-md hover:bg-indigo-700">Save</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
         </div>
 
         <!-- Orders Table -->
-        <div class="bg-white rounded-xl shadow-sm">
+        <div class="bg-white rounded-xl shadow-sm mt-8">
             <div class="p-6 border-b">
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <h2 class="text-xl font-bold text-gray-800">All Orders</h2>
@@ -201,6 +232,13 @@
             </div>
         </div>
     </div>
+
+    <div id="image-viewer-modal" class="modal hidden fixed inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center p-4 z-50">
+        <div class="relative max-w-3xl max-h-[90vh]">
+            <img id="modal-image-content" src="" alt="Security Alert Image" class="w-auto h-auto max-w-full max-h-full object-contain">
+            <button id="close-image-viewer-btn" class="absolute -top-2 -right-2 text-white bg-red-600 rounded-full p-1 text-2xl">×</button>
+        </div>
+    </div>
     
     <script>
         const firebaseConfig = {
@@ -228,6 +266,8 @@
         let callHistory = [];
         let unreadCallCount = 0;
         let previouslyRingingKiosks = new Map();
+        let knownSecurityAlertKeys = new Set();
+        let knownLoginActivityKeys = new Set();
 
         // --- UTILS ---
         function showToast(message, duration = 3000) {
@@ -259,6 +299,7 @@
         function timeAgo(timestamp) {
             const now = Date.now();
             const seconds = Math.floor((now - timestamp) / 1000);
+            if (seconds < 60) return "just now";
             let interval = seconds / 31536000;
             if (interval > 1) return Math.floor(interval) + " years ago";
             interval = seconds / 2592000;
@@ -1000,6 +1041,110 @@
                 updateNotificationBadge();
             });
         }
+        
+        // --- SECURITY & ACTIVITY ALERTS ---
+        function listenForSecurityAlerts() {
+            const alertsRef = db.ref('kiosk/securityAlerts').limitToLast(20);
+            const container = document.getElementById('security-alerts-container');
+            const noAlertsMsg = document.getElementById('no-security-alerts-message');
+            const alertSound = document.getElementById('security-alert-sound');
+
+            alertsRef.on('value', snapshot => {
+                const alerts = snapshot.val();
+                if (!alerts || Object.keys(alerts).length === 0) {
+                    container.innerHTML = '';
+                    noAlertsMsg.classList.remove('hidden');
+                    return;
+                }
+                
+                noAlertsMsg.classList.add('hidden');
+                container.innerHTML = ''; // Clear and re-render to maintain order
+                const allAlerts = Object.entries(alerts).map(([key, value]) => ({ key, ...value }));
+                allAlerts.sort((a,b) => b.timestamp - a.timestamp);
+
+                allAlerts.forEach(alert => {
+                    const isNew = !knownSecurityAlertKeys.has(alert.key) && !alert.acknowledged;
+                    if (isNew) {
+                        alertSound.play().catch(e => console.error("Alert sound failed:", e));
+                        knownSecurityAlertKeys.add(alert.key);
+                    }
+
+                    const card = document.createElement('div');
+                    card.id = `alert-${alert.key}`;
+                    card.className = `alert-card ${isNew ? 'new-alert' : ''} bg-white p-3 rounded-lg flex items-center gap-3 border-l-4 ${alert.acknowledged ? 'border-gray-300 opacity-60' : 'border-red-500'}`;
+                    
+                    card.innerHTML = `
+                        ${alert.imageData ? `<img src="${alert.imageData}" alt="Capture" class="w-16 h-16 object-cover rounded-md cursor-pointer security-image-thumb">` : `<div class="w-16 h-16 bg-gray-200 flex items-center justify-center rounded-md text-xs text-center text-gray-500">No Image</div>`}
+                        <div class="flex-grow">
+                            <p class="font-semibold text-sm text-gray-800">${alert.reason}</p>
+                            <p class="text-xs text-gray-500">${alert.kioskId} - ${timeAgo(alert.timestamp)}</p>
+                        </div>
+                        ${!alert.acknowledged ? `<button class="acknowledge-alert-btn flex-shrink-0 bg-blue-500 text-white text-xs font-semibold py-1 px-2 rounded-md hover:bg-blue-600" data-key="${alert.key}">Ack</button>` : ''}
+                    `;
+                    container.appendChild(card);
+                });
+            });
+
+            alertsRef.once('value', snapshot => {
+                if (snapshot.val()) knownSecurityAlertKeys = new Set(Object.keys(snapshot.val()));
+            });
+        }
+
+        function listenForLoginActivity() {
+            const activityRef = db.ref('kiosk/loginActivity').limitToLast(30);
+            const container = document.getElementById('login-activity-container');
+            const noActivityMsg = document.getElementById('no-login-activity-message');
+            const notificationSound = document.getElementById('notification-sound');
+
+            activityRef.on('value', snapshot => {
+                const activities = snapshot.val();
+                if (!activities || Object.keys(activities).length === 0) {
+                    container.innerHTML = '';
+                    noActivityMsg.classList.remove('hidden');
+                    return;
+                }
+                
+                noActivityMsg.classList.add('hidden');
+                container.innerHTML = ''; // Clear and re-render for correct order
+                
+                const allActivities = Object.entries(activities).map(([key, value]) => ({ key, ...value }));
+                allActivities.sort((a, b) => b.timestamp - a.timestamp); // Newest first
+
+                allActivities.forEach(activity => {
+                    const isNew = !knownLoginActivityKeys.has(activity.key);
+                    if (isNew) {
+                        notificationSound.play().catch(e => console.error("Sound failed:", e));
+                        knownLoginActivityKeys.add(activity.key);
+                    }
+
+                    const card = document.createElement('div');
+                    card.className = `login-activity-card ${isNew ? 'new-request' : ''} bg-white p-3 rounded-lg flex items-center gap-3 border-l-4 border-blue-400`;
+                    
+                    let imageHtml = '';
+                    if (activity.imageData) {
+                        imageHtml = `<img src="${activity.imageData}" alt="Login Capture" class="w-16 h-16 object-cover rounded-md cursor-pointer login-image-thumb">`;
+                    } else if (activity.error) {
+                        imageHtml = `<div class="w-16 h-16 bg-red-100 flex items-center justify-center rounded-md text-xs text-center text-red-600">Capture Failed</div>`;
+                    } else {
+                        imageHtml = `<div class="w-16 h-16 bg-gray-200 flex items-center justify-center rounded-md text-xs text-center text-gray-500">No Image</div>`;
+                    }
+
+                    card.innerHTML = `
+                        ${imageHtml}
+                        <div class="flex-grow">
+                            <p class="font-semibold text-sm text-gray-800">${activity.kioskId}</p>
+                            <p class="text-xs text-gray-500">${timeAgo(activity.timestamp)}</p>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            });
+
+            activityRef.once('value', snapshot => {
+                if (snapshot.val()) knownLoginActivityKeys = new Set(Object.keys(snapshot.val()));
+            });
+        }
+
 
         // --- EVENT LISTENERS ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -1012,6 +1157,8 @@
             fetchAllOrders();
             listenForKioskRequests();
             listenForLiveCalls();
+            listenForSecurityAlerts();
+            listenForLoginActivity();
 
             const qrSettingsForm = document.getElementById('qr-settings-form');
             const upiIdInput = document.getElementById('upi-id-input');
@@ -1138,6 +1285,29 @@
                 if (!bellBtn.contains(e.target) && !dropdown.contains(e.target)) {
                     dropdown.classList.add('hidden');
                 }
+            });
+
+            // Security Alert & Login Activity Listeners
+            document.getElementById('security-alerts-container').addEventListener('click', e => {
+                if (e.target.classList.contains('acknowledge-alert-btn')) {
+                    const key = e.target.dataset.key;
+                    db.ref(`kiosk/securityAlerts/${key}`).update({ acknowledged: true });
+                }
+                if (e.target.classList.contains('security-image-thumb')) {
+                    document.getElementById('modal-image-content').src = e.target.src;
+                    document.getElementById('image-viewer-modal').classList.remove('hidden');
+                }
+            });
+
+            document.getElementById('login-activity-container').addEventListener('click', e => {
+                if (e.target.classList.contains('login-image-thumb')) {
+                    document.getElementById('modal-image-content').src = e.target.src;
+                    document.getElementById('image-viewer-modal').classList.remove('hidden');
+                }
+            });
+
+            document.getElementById('close-image-viewer-btn').addEventListener('click', () => {
+                document.getElementById('image-viewer-modal').classList.add('hidden');
             });
         });
     </script>
