@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin panel </title><meta name="title" content="Kiosk admin panel "><meta name="description" content="Kiosk app order management "><meta charset="UTF-8">
+<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin </title><meta name="title" content="Kiosk admin "><meta name="description" content="Update version 2.0"><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="stylesheet" href="./style.css"><script src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js" async=""></script><script type="importmap">{
   "imports": {}
 }</script></head><body>
@@ -13,7 +13,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display.swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
         .modal { transition: opacity 0.25s ease; }
         th.sortable { cursor: pointer; user-select: none; }
@@ -26,12 +26,20 @@
         .status-InProgress { background-color: #dbeafe; color: #1e40af; }
         .status-Completed { background-color: #d1fae5; color: #065f46; }
         .status-Cancelled { background-color: #fee2e2; color: #991b1b; }
-        .request-card.new-request {
+        .request-card.new-request, .call-card.new-call {
             animation: fadeIn 0.5s ease-out;
         }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
+        }
+        .call-card {
+            animation: pulse-border 2s infinite;
+        }
+        @keyframes pulse-border {
+            0% { border-color: #ef4444; }
+            50% { border-color: #f87171; }
+            100% { border-color: #ef4444; }
         }
     </style>
 
@@ -47,6 +55,18 @@
                 <div class="bg-white p-5 rounded-xl shadow-sm"><p class="text-sm text-gray-500">Total Outstanding</p><p id="total-outstanding" class="text-2xl font-bold text-red-600">₹0</p></div>
                 <div class="bg-white p-5 rounded-xl shadow-sm"><p class="text-sm text-gray-500">Completed Orders</p><p id="completed-orders" class="text-2xl font-bold">0</p></div>
             </div>
+        </div>
+
+        <!-- Live Kiosk Calls Panel -->
+        <div class="bg-white rounded-xl shadow-sm">
+            <div class="p-6 border-b">
+                <h2 class="text-xl font-bold text-gray-800">Live Kiosk Calls</h2>
+                <p class="text-sm text-gray-500 mt-1">Answer incoming video calls from the customer kiosk.</p>
+            </div>
+            <div id="live-calls-container" class="p-6 space-y-4">
+                <!-- Live call cards will be injected here -->
+            </div>
+            <p id="no-live-calls-message" class="p-6 text-center text-gray-500">No active calls from the kiosk.</p>
         </div>
 
         <!-- Kiosk Order Requests Panel -->
@@ -100,14 +120,31 @@
         </div>
     </div>
 
-    <!-- Order Details & Edit Modal -->
+    <!-- Modals -->
     <div id="order-modal" class="modal hidden fixed inset-0 bg-gray-600 bg-opacity-75 overflow-y-auto h-full w-full flex items-center justify-center p-4 z-40">
         <div id="order-modal-content" class="relative mx-auto p-6 border w-full max-w-3xl shadow-lg rounded-xl bg-white max-h-[90vh] flex flex-col">
-            <!-- Content will be injected by JS -->
+            <!-- Order Details/Edit Content will be injected by JS -->
         </div>
     </div>
     
-    <!-- Confirmation Modal -->
+    <div id="call-modal" class="modal hidden fixed inset-0 bg-gray-800 bg-opacity-90 overflow-y-auto h-full w-full flex items-center justify-center p-4 z-50">
+        <div id="call-modal-content" class="relative mx-auto p-6 border w-full max-w-4xl shadow-lg rounded-xl bg-white flex flex-col">
+             <div class="flex justify-between items-center pb-4 border-b">
+                <h3 id="call-modal-title" class="text-xl font-bold">Incoming Call</h3>
+                <button id="close-call-modal-btn" class="text-2xl">×</button>
+            </div>
+            <div class="flex-grow py-4 grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div class="md:col-span-3 bg-black rounded-lg overflow-hidden relative">
+                    <video id="remote-video" autoplay="" playsinline="" class="w-full h-full object-cover"></video>
+                    <video id="local-video" autoplay="" playsinline="" muted="" class="absolute bottom-4 right-4 w-1/4 rounded-md border-2 border-white"></video>
+                </div>
+                <div id="call-actions-container" class="md:col-span-2 flex flex-col justify-between">
+                    <!-- Call actions will be injected here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="confirmation-modal" class="modal hidden fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
         <div class="relative mx-auto p-6 w-full max-w-sm shadow-lg rounded-xl bg-white text-center">
             <h3 class="text-lg font-medium text-gray-900">Are you sure?</h3>
@@ -135,7 +172,13 @@
             sort: { key: 'bookingDate', order: 'desc' }
         };
         let confirmationCallback = null;
-        let knownKioskRequestKeys = new Set(); 
+        let knownKioskRequestKeys = new Set();
+        
+        // --- WebRTC State ---
+        let localStream = null;
+        let peerConnections = {};
+        const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        let knownLiveCallKeys = new Set();
 
         // --- UTILS ---
         const calculateTotals = (order) => {
@@ -537,6 +580,168 @@
                 }
             });
         }
+        
+        // --- LIVE CALLS (WebRTC) LOGIC ---
+        async function startAdminCall(kioskId, kioskData) {
+            document.getElementById('call-modal').classList.remove('hidden');
+            const titleEl = document.getElementById('call-modal-title');
+            const actionsContainer = document.getElementById('call-actions-container');
+
+            let title = 'Help Request';
+            let actionsHtml = `<button id="end-call-btn" class="w-full bg-red-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-red-700">End Call</button>`;
+            if (kioskData.status === 'payment_verification_pending') {
+                title = `Payment Verification for Order #${kioskData.orderInfo.number}`;
+                actionsHtml = `
+                    <div class="space-y-3">
+                         <p class="text-center text-gray-600">Customer is showing their payment confirmation screen.</p>
+                         <button id="approve-payment-btn" class="w-full bg-green-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-green-700">Approve Payment</button>
+                         <button id="reject-payment-btn" class="w-full bg-yellow-500 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-yellow-600">Reject Payment</button>
+                    </div>
+                    <button id="end-call-btn" class="w-full bg-red-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-red-700">End Call</button>
+                `;
+            }
+            titleEl.textContent = title;
+            actionsContainer.innerHTML = actionsHtml;
+
+            // Set up button listeners
+            actionsContainer.querySelector('#end-call-btn').onclick = () => endAdminCall(kioskId);
+            if (actionsContainer.querySelector('#approve-payment-btn')) {
+                actionsContainer.querySelector('#approve-payment-btn').onclick = () => handlePaymentApproval(kioskId, kioskData, true);
+            }
+            if (actionsContainer.querySelector('#reject-payment-btn')) {
+                 actionsContainer.querySelector('#reject-payment-btn').onclick = () => handlePaymentApproval(kioskId, kioskData, false);
+            }
+
+            try {
+                if (!localStream) {
+                    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                    document.getElementById('local-video').srcObject = localStream;
+                }
+
+                const pc = new RTCPeerConnection(rtcConfig);
+                peerConnections[kioskId] = pc;
+                
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+                pc.ontrack = event => {
+                    document.getElementById('remote-video').srcObject = event.streams[0];
+                };
+
+                pc.onicecandidate = event => {
+                    if (event.candidate) {
+                        db.ref(`kiosk/liveFeeds/${kioskId}/webrtc/adminCandidates`).push(event.candidate.toJSON());
+                    }
+                };
+
+                db.ref(`kiosk/liveFeeds/${kioskId}/webrtc/kioskCandidates`).on('child_added', snapshot => {
+                    if (snapshot.exists()) pc.addIceCandidate(new RTCIceCandidate(snapshot.val()));
+                });
+
+                await pc.setRemoteDescription(new RTCSessionDescription(kioskData.webrtc.offer));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+
+                await db.ref(`kiosk/liveFeeds/${kioskId}/webrtc/answer`).set({ type: answer.type, sdp: answer.sdp });
+                await db.ref(`kiosk/liveFeeds/${kioskId}`).update({ status: 'in_call' });
+
+            } catch (err) {
+                console.error("Error starting admin call:", err);
+                endAdminCall(kioskId);
+            }
+        }
+        
+        function endAdminCall(kioskId) {
+            if (peerConnections[kioskId]) {
+                peerConnections[kioskId].close();
+                delete peerConnections[kioskId];
+            }
+            db.ref(`kiosk/liveFeeds/${kioskId}/webrtc/kioskCandidates`).off();
+            db.ref(`kiosk/liveFeeds/${kioskId}`).update({ status: 'active_idle', webrtc: null });
+
+            if (Object.keys(peerConnections).length === 0) {
+                document.getElementById('call-modal').classList.add('hidden');
+                document.getElementById('local-video').srcObject = null;
+                document.getElementById('remote-video').srcObject = null;
+                if (localStream) {
+                    localStream.getTracks().forEach(track => track.stop());
+                    localStream = null;
+                }
+            }
+        }
+
+        async function handlePaymentApproval(kioskId, kioskData, isApproved) {
+            const orderId = kioskData.orderInfo.firebaseKey;
+            const order = allOrders.find(o => o.id === orderId);
+
+            if (isApproved && order) {
+                const { balance } = calculateTotals(order);
+                const newPayment = {
+                    id: Date.now(),
+                    amount: balance,
+                    date: new Date().toISOString(),
+                    mode: 'Kiosk Verified'
+                };
+                const updatedPayments = [...(order.payments || []), newPayment];
+                const newReceived = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
+
+                await db.ref('orders/' + orderId).update({
+                    payments: updatedPayments,
+                    receivedPayment: newReceived
+                });
+            }
+
+            const actionType = isApproved ? 'payment_approved' : 'payment_rejected';
+            await db.ref(`kiosk/liveFeeds/${kioskId}/adminAction`).set({ type: actionType, timestamp: firebase.database.ServerValue.TIMESTAMP });
+            endAdminCall(kioskId);
+        }
+
+        function listenForLiveCalls() {
+            const callsRef = db.ref('kiosk/liveFeeds');
+            const container = document.getElementById('live-calls-container');
+            const noCallsMsg = document.getElementById('no-live-calls-message');
+            const notificationSound = document.getElementById('notification-sound');
+
+            callsRef.on('value', snapshot => {
+                const calls = snapshot.val() || {};
+                container.innerHTML = '';
+                let activeCalls = 0;
+                const newCallKeys = new Set();
+                
+                Object.keys(calls).forEach(kioskId => {
+                    const call = calls[kioskId];
+                    if (call.status === 'help_requested' || call.status === 'payment_verification_pending') {
+                        activeCalls++;
+                        newCallKeys.add(kioskId);
+                        const isNew = !knownLiveCallKeys.has(kioskId);
+
+                        let callInfo = call.status === 'help_requested' ?
+                            `<p class="font-bold text-lg text-gray-800">Help Request</p>` :
+                            `<p class="font-bold text-lg text-gray-800">Payment Verification</p><p class="text-sm text-gray-600">Order #${call.orderInfo.number}</p>`;
+
+                        const card = document.createElement('div');
+                        card.className = `call-card ${isNew ? 'new-call' : ''} bg-red-50 p-4 border-l-4 rounded-r-lg flex justify-between items-center gap-4`;
+                        card.innerHTML = `
+                            <div>
+                                ${callInfo}
+                                <p class="mt-2 text-gray-700">From: ${call.kioskInfo.name}</p>
+                            </div>
+                            <button class="answer-call-btn w-full sm:w-auto bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 flex-shrink-0">Answer Call</button>
+                        `;
+                        card.querySelector('.answer-call-btn').onclick = () => startAdminCall(kioskId, call);
+                        container.appendChild(card);
+                    }
+                });
+
+                if(newCallKeys.size > knownLiveCallKeys.size && knownLiveCallKeys.size > 0){
+                    notificationSound.play().catch(e => console.error("Sound play failed:", e));
+                }
+                knownLiveCallKeys = newCallKeys;
+
+                noCallsMsg.classList.toggle('hidden', activeCalls > 0);
+            });
+            callsRef.once('value', snapshot => { if (snapshot.val()) knownLiveCallKeys = new Set(Object.keys(snapshot.val())); });
+        }
+
 
         // --- EVENT LISTENERS ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -545,6 +750,7 @@
             
             fetchAllOrders();
             listenForKioskRequests();
+            listenForLiveCalls();
 
             document.getElementById('search-input').addEventListener('input', (e) => { state.search = e.target.value; render(); });
             document.getElementById('filter-buttons').addEventListener('click', (e) => {
@@ -590,6 +796,12 @@
                 const id = e.target.dataset.id;
                 if (e.target.id === 'edit-order-form') handleSaveChanges(e.target, id);
                 if (e.target.id === 'add-payment-form') handleAddPayment(e.target, id);
+            });
+
+            document.getElementById('close-call-modal-btn').addEventListener('click', e => {
+                // Find which call this modal is for if we support multiple, for now, assume one.
+                const activeKioskId = Object.keys(peerConnections)[0];
+                if(activeKioskId) endAdminCall(activeKioskId);
             });
 
             document.getElementById('confirmation-cancel-btn').addEventListener('click', () => document.getElementById('confirmation-modal').classList.add('hidden'));
