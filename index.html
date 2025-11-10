@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin </title><meta name="title" content="Kiosk admin "><meta name="description" content="With qr code "><meta charset="UTF-8">
+<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>Kiosk admin </title><meta name="title" content="Kiosk admin "><meta name="description" content="Call information "><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="stylesheet" href="./style.css"><script src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js" async=""></script><script type="importmap">{
   "imports": {}
 }</script></head><body>
+
 
 
 
@@ -702,7 +703,7 @@
             const titleEl = document.getElementById('call-modal-title');
             const actionsContainer = document.getElementById('call-actions-container');
 
-            let title = 'Help Request';
+            let title = 'Incoming Call';
             let actionsHtml = `<button id="end-call-btn" class="w-full bg-red-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-red-700">End Call</button>`;
             if (kioskData.status === 'payment_verification_pending') {
                 title = `Payment Verification for Order #${kioskData.orderInfo.number}`;
@@ -714,7 +715,10 @@
                     </div>
                     <button id="end-call-btn" class="w-full bg-red-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-red-700">End Call</button>
                 `;
+            } else if (kioskData.status === 'help_requested' && kioskData.customerInfo) {
+                title = `Help Request from ${kioskData.customerInfo.customerName}`;
             }
+
             titleEl.textContent = title;
             actionsContainer.innerHTML = actionsHtml;
 
@@ -742,15 +746,14 @@
 
                 const pc = new RTCPeerConnection(rtcConfig);
                 const statusListener = (snapshot) => {
-                    const status = snapshot.val();
-                    if (status !== 'in_call' && peerConnections[kioskId]) {
+                    if (!snapshot.exists() && peerConnections[kioskId]) {
                         showToast(`Call with ${kioskData.kioskInfo.name} ended.`);
                         endAdminCall(kioskId);
                     }
                 };
 
                 peerConnections[kioskId] = { pc: pc, statusListener: statusListener };
-                db.ref(`kiosk/liveFeeds/${kioskId}/status`).on('value', statusListener);
+                db.ref(`kiosk/liveFeeds/${kioskId}`).on('value', statusListener);
                 
                 localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
@@ -795,7 +798,7 @@
             if (peerConnections[kioskId]) {
                 const pcData = peerConnections[kioskId];
                 if (pcData.statusListener) {
-                    db.ref(`kiosk/liveFeeds/${kioskId}/status`).off('value', pcData.statusListener);
+                    db.ref(`kiosk/liveFeeds/${kioskId}`).off('value', pcData.statusListener);
                 }
                 if (pcData.pc && pcData.pc.signalingState !== 'closed') {
                     pcData.pc.close();
@@ -803,8 +806,7 @@
                 delete peerConnections[kioskId];
             }
             
-            db.ref(`kiosk/liveFeeds/${kioskId}/webrtc/kioskCandidates`).off();
-            db.ref(`kiosk/liveFeeds/${kioskId}`).update({ status: 'active_idle', webrtc: null });
+            db.ref(`kiosk/liveFeeds/${kioskId}`).remove();
 
             if (Object.keys(peerConnections).length === 0) {
                 document.getElementById('call-modal').classList.add('hidden');
@@ -877,17 +879,28 @@
                                 speak('Ek customer help ke liye call kar rahe hain.');
                             }
                         }
-
-                        let callInfo = call.status === 'help_requested' ?
-                            `<p class="font-bold text-lg text-gray-800">Help Request</p>` :
-                            `<p class="font-bold text-lg text-gray-800">Payment Verification</p><p class="text-sm text-gray-600">Order #${call.orderInfo.number}</p>`;
+                        
+                        let callTitle, customerDetails;
+                        if (call.status === 'help_requested') {
+                            callTitle = `<p class="font-bold text-lg text-gray-800">Help Request</p>`;
+                        } else {
+                            callTitle = `<p class="font-bold text-lg text-gray-800">Payment Verification</p><p class="text-sm text-gray-600">Order #${call.orderInfo.number}</p>`;
+                        }
+                        
+                        if (call.customerInfo) {
+                            customerDetails = `
+                                <p class="font-semibold text-gray-800 mt-2">${call.customerInfo.customerName}</p>
+                                <p class="text-sm text-gray-600">${call.customerInfo.customerMobile}</p>`;
+                        } else {
+                            customerDetails = `<p class="mt-2 text-gray-700">From: ${call.kioskInfo.name}</p>`;
+                        }
 
                         const card = document.createElement('div');
                         card.className = `call-card ${isNew ? 'new-call' : ''} bg-red-50 p-4 border-l-4 rounded-r-lg flex justify-between items-center gap-4`;
                         card.innerHTML = `
                             <div>
-                                ${callInfo}
-                                <p class="mt-2 text-gray-700">From: ${call.kioskInfo.name}</p>
+                                ${callTitle}
+                                ${customerDetails}
                             </div>
                             <button class="answer-call-btn w-full sm:w-auto bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 flex-shrink-0">Answer Call</button>
                         `;
@@ -951,6 +964,10 @@
 
             callHistory.forEach(call => {
                 const info = statusInfo[call.status] || { icon: '', text: call.status, color: 'text-gray-700' };
+                let customerInfoHtml = '';
+                if (call.customerInfo && call.customerInfo.customerName) {
+                    customerInfoHtml = `<p class="text-xs text-gray-500">${call.customerInfo.customerName} - ${call.customerInfo.customerMobile}</p>`;
+                }
                 const item = document.createElement('div');
                 item.className = `p-3 flex items-start gap-3 border-b last:border-b-0 hover:bg-gray-50 ${!call.adminSaw ? 'bg-indigo-50' : ''}`;
                 item.innerHTML = `
@@ -958,6 +975,7 @@
                     <div>
                         <p class="font-semibold ${info.color}">${info.text}</p>
                         <p class="text-sm text-gray-600">${call.callType} from ${call.kioskName}</p>
+                        ${customerInfoHtml}
                         <p class="text-xs text-gray-400">${timeAgo(call.initiatedAt)}</p>
                     </div>
                 `;
